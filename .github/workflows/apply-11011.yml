@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   apply:
-    if: github.event.head_commit.message == 'ci: prepare issue 11011 patch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -46,9 +45,7 @@ jobs:
           PY
 
           rm .github/workflows/apply-11011.yml
-
           git diff --check
-          git diff -- contrib/epee/include/net/abstract_tcp_server2.inl tests/unit_tests/epee_boosted_tcp_server.cpp
 
           git config user.name "v ₿"
           git config user.email "valentin.brekher@gmail.com"
