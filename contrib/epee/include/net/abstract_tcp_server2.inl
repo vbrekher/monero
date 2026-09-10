@@ -71,6 +71,16 @@ namespace epee
 {
 namespace net_utils
 {
+  namespace detail
+  {
+    inline unsigned get_aggressive_timeout_shift(bool loopback, unsigned socket_count, unsigned host_count) noexcept
+    {
+      if (loopback || socket_count <= AGGRESSIVE_TIMEOUT_THRESHOLD)
+        return 0;
+      return std::min(std::max(host_count, 1u) - 1, 8u);
+    }
+  }
+
   template<typename T>
   T& check_and_get(std::shared_ptr<T>& ptr)
   {
@@ -106,10 +116,10 @@ namespace net_utils
   {
     unsigned count{};
     try { count = host_count(); } catch (...) {}
-    const unsigned shift = (
-      connection_basic::get_state().sock_count > AGGRESSIVE_TIMEOUT_THRESHOLD ?
-      std::min(std::max(count, 1u) - 1, 8u) :
-      0
+    const unsigned shift = detail::get_aggressive_timeout_shift(
+      get_context().m_remote_address.is_loopback(),
+      connection_basic::get_state().sock_count,
+      count
     );
     return (
       m_local ?

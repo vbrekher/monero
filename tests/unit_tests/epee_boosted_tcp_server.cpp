@@ -90,6 +90,14 @@ namespace
   typedef epee::net_utils::boosted_tcp_server<test_protocol_handler> test_tcp_server;
 }
 
+TEST(test_epee_connection, aggressive_timeout_skips_loopback)
+{
+  EXPECT_EQ(epee::net_utils::detail::get_aggressive_timeout_shift(true, 121, 200), 0u);
+  EXPECT_EQ(epee::net_utils::detail::get_aggressive_timeout_shift(false, 120, 200), 0u);
+  EXPECT_EQ(epee::net_utils::detail::get_aggressive_timeout_shift(false, 121, 2), 1u);
+  EXPECT_EQ(epee::net_utils::detail::get_aggressive_timeout_shift(false, 121, 200), 8u);
+}
+
 TEST(boosted_tcp_server, worker_threads_are_exception_resistant)
 {
   test_tcp_server srv(epee::net_utils::e_connection_type_RPC); // RPC disables network limit for unit tests
