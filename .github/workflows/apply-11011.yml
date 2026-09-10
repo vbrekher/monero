@@ -1,0 +1,57 @@
+name: apply-11011
+
+on:
+  push:
+    branches:
+      - fix/11011-local-rpc-timeouts
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.head_commit.message == 'ci: prepare issue 11011 patch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/11011-local-rpc-timeouts
+          fetch-depth: 0
+      - name: Apply focused timeout policy patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          inl = Path('contrib/epee/include/net/abstract_tcp_server2.inl')
+          text = inl.read_text()
+
+          marker = '''  template<typename T>\n  T& check_and_get(std::shared_ptr<T>& ptr)\n'''
+          helper = '''  namespace detail\n  {\n    inline unsigned get_aggressive_timeout_shift(bool loopback, unsigned socket_count, unsigned host_count) noexcept\n    {\n      if (loopback || socket_count <= AGGRESSIVE_TIMEOUT_THRESHOLD)\n        return 0;\n      return std::min(std::max(host_count, 1u) - 1, 8u);\n    }\n  }\n\n  template<typename T>\n  T& check_and_get(std::shared_ptr<T>& ptr)\n'''
+          assert text.count(marker) == 1
+          text = text.replace(marker, helper)
+
+          old = '''    const unsigned shift = (\n      connection_basic::get_state().sock_count > AGGRESSIVE_TIMEOUT_THRESHOLD ?\n      std::min(std::max(count, 1u) - 1, 8u) :\n      0\n    );\n'''
+          new = '''    const unsigned shift = detail::get_aggressive_timeout_shift(\n      get_context().m_remote_address.is_loopback(),\n      connection_basic::get_state().sock_count,\n      count\n    );\n'''
+          assert text.count(old) == 1
+          text = text.replace(old, new)
+          inl.write_text(text)
+
+          test = Path('tests/unit_tests/epee_boosted_tcp_server.cpp')
+          text = test.read_text()
+          marker = '''  typedef epee::net_utils::boosted_tcp_server<test_protocol_handler> test_tcp_server;\n}\n\nTEST(boosted_tcp_server, worker_threads_are_exception_resistant)\n'''
+          replacement = '''  typedef epee::net_utils::boosted_tcp_server<test_protocol_handler> test_tcp_server;\n}\n\nTEST(test_epee_connection, aggressive_timeout_skips_loopback)\n{\n  EXPECT_EQ(epee::net_utils::detail::get_aggressive_timeout_shift(true, 121, 200), 0u);\n  EXPECT_EQ(epee::net_utils::detail::get_aggressive_timeout_shift(false, 120, 200), 0u);\n  EXPECT_EQ(epee::net_utils::detail::get_aggressive_timeout_shift(false, 121, 2), 1u);\n  EXPECT_EQ(epee::net_utils::detail::get_aggressive_timeout_shift(false, 121, 200), 8u);\n}\n\nTEST(boosted_tcp_server, worker_threads_are_exception_resistant)\n'''
+          assert text.count(marker) == 1
+          text = text.replace(marker, replacement)
+          test.write_text(text)
+          PY
+
+          rm .github/workflows/apply-11011.yml
+
+          git diff --check
+          git diff -- contrib/epee/include/net/abstract_tcp_server2.inl tests/unit_tests/epee_boosted_tcp_server.cpp
+
+          git config user.name "v ₿"
+          git config user.email "valentin.brekher@gmail.com"
+          git add contrib/epee/include/net/abstract_tcp_server2.inl tests/unit_tests/epee_boosted_tcp_server.cpp .github/workflows/apply-11011.yml
+          git commit -m "net: keep loopback RPC connections out of aggressive timeouts"
+          git push origin HEAD:fix/11011-local-rpc-timeouts
